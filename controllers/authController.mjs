@@ -19,7 +19,8 @@ export const login = (req, res, next) => {
         
         if (!user) {
             console.log("⛔ Η Πρόσβαση απορρίφθηκε! Αιτία:", info ? info.message : "Άγνωστο");
-            return res.send("Αποτυχία σύνδεσης: Κοίτα το τερματικό για την αιτία!");
+            req.flash('error', 'Λάθος email ή κωδικός πρόσβασης!');
+            return res.redirect('/login');
         }
         
         console.log("✅ Ο κωδικός είναι ΣΩΣΤΟΣ! Χρήστης:", user.email);
@@ -66,7 +67,7 @@ export const logout = (req, res, next) => {
     });
 };
 
-// USER INFO 
+// user INFO 
 export const getMe = (req, res) => {
     if (req.isAuthenticated()) {
         res.json({ authenticated: true, user: req.user });

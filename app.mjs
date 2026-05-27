@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import cors from 'cors';
 import session from 'express-session';
 import passport from 'passport';
+import flash from 'connect-flash';
 
 // 2. Τοπικά Αρχεία (Προσέχουμε τις καταλήξεις!)
 import configurePassport from './config/passport.mjs';
@@ -15,6 +16,7 @@ import authRouter from './routes/authRoutes.mjs';
 import dashboardRouter from './routes/dashboardRoutes.mjs';
 import ticketRouter from './routes/ticketRoutes.mjs';
 import helpers from './controllers/hbsHelpers.mjs';
+import { startTicketCloseCron } from './scripts/ticketCloseCron.mjs';
 
 const __filename = fileURLToPath(import.meta.url); 
 const __dirname = dirname(__filename); 
@@ -34,9 +36,20 @@ function createApp() {
         cookie: { maxAge: 1000 * 60 * 60 * 24 }
     }));
 
+    //for the login error messages
+    app.use(flash());
+    app.use((req, res, next) => {
+    let err = req.flash('error');
+    res.locals.errorMessage = err.length > 0 ? err[0] : null; 
+    next();
+    });
+    //
+
     app.use(passport.initialize());
     app.use(passport.session());
 
+    // get the initials of the logged-in user to display in the navbar, 
+    // also make the user object available in all views through res.locals
     app.use((req, res, next) => {
         const user = req.user || null;
         let userInitials = '';
@@ -60,7 +73,7 @@ function createApp() {
     // Serve all static files from public folder
     app.use(express.static(resolve(__dirname, 'public')));
 
-    // Ρυθμίσεις Handlebars (Διορθώθηκε η θέση των Layouts/Partials!)
+
     app.engine('hbs', engine({
         extname: 'hbs',
         defaultLayout: 'main',
@@ -71,11 +84,13 @@ function createApp() {
     app.set('view engine', 'hbs');
     app.set('views', resolve(__dirname, 'views'));
 
-    // Σύνδεση των Routes
+    // Routes
     app.use('/api', authRouter);
     app.use('/', pageRouter);
     app.use('/', dashboardRouter);
     app.use('/tickets', ticketRouter);
+
+    startTicketCloseCron();
 
     return app;
 }

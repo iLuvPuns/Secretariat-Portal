@@ -5,13 +5,27 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+// const pool = mysql.createPool({
+//     host: process.env.DB_HOST,
+//     user: process.env.DB_USER,
+//     password: process.env.DB_PASS,
+//     database: process.env.DB_NAME,
+// });
+
 const pool = mysql.createPool({
     host: process.env.DB_HOST,
     user: process.env.DB_USER,
-    password: process.env.DB_PASS,
+    password: process.env.DB_PASSWORD, 
     database: process.env.DB_NAME,
+    port: process.env.DB_PORT,       
+    
+    ssl: {
+        rejectUnauthorized: false
+    },
+    
+    waitForConnections: true,
+    connectionLimit: 10
 });
-
 
 export async function getStudentInfo(student_id) {
     try {
@@ -115,9 +129,18 @@ export async function getAllCategories() {
 }
 
 export async function saveAttachment({ for_message_id, file_path, file_name, file_size, file_type }) {
+
+    // Διόρθωση ονόματος αρχείου για Ελληνικά (αν χρειάζεται)
+    let correctName = file_name;
+    try {
+        correctName = Buffer.from(file_name, 'latin1').toString('utf8');
+    } catch (error) {
+        console.error('Σφάλμα κατά τη μετατροπή των Ελληνικών:', error);
+    }
+
     const [result] = await pool.query(sql.saveAttachment, [
-        file_path,
-        file_name,
+        correctName,
+        file_path,      
         file_size,
         file_type,
         for_message_id
@@ -167,6 +190,11 @@ export async function getAttachmentsByMessagesId(message_ids) {
 export async function getTicketById(ticket_id) {
     const [rows] = await pool.query(sql.getTicketById, [ticket_id]);
     return rows[0];
+}
+
+export async function closeStaleCompletedTickets() {
+    const [result] = await pool.query(sql.closeStaleCompletedTickets);
+    return result;
 }
 
 export async function searchTicketsByStudentTerm(term) {
