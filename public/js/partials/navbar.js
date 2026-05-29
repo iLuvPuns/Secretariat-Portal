@@ -40,6 +40,27 @@ document.addEventListener('DOMContentLoaded', function () {
     let timer = null;
     if (!input || !resultsBox) return;
 
+    // prevent browser autofill dropdowns from showing previous entries in many browsers
+    try {
+        input.setAttribute('autocomplete', 'off');
+        input.setAttribute('autocorrect', 'off');
+        input.setAttribute('autocapitalize', 'off');
+        input.setAttribute('spellcheck', 'false');
+
+        // Trick: keep input readonly until user focuses - this prevents some browsers
+        // from showing saved suggestions/autofill. Remove readonly on focus so typing works.
+        input.readOnly = true;
+        input.addEventListener('focus', () => {
+            input.readOnly = false;
+            // move cursor to end
+            const val = input.value;
+            input.value = '';
+            input.value = val;
+        }, { once: true });
+    } catch (e) {
+        // ignore
+    }
+
     function clearResults() {
         resultsBox.innerHTML = '';
         resultsBox.classList.remove('open');
@@ -50,12 +71,68 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!items || items.length === 0) return clearResults();
         const ul = document.createElement('ul');
         ul.className = 'tickets-search-list';
+        // determine which tab is currently visible on the viewtickets page
+        const getActiveTabId = () => {
+            const activeLink = document.querySelector('.tabs-header .tab-link.active');
+            if (activeLink) {
+                // tab links call openTab(event, 'tab-id') so we can read onclick arg from attribute
+                const onclick = activeLink.getAttribute('onclick') || '';
+                const match = onclick.match(/openTab\(.*?,\s*'([^']+)'\)/);
+                if (match) return match[1];
+            }
+            // fallback: find visible tab-content
+            const visible = Array.from(document.querySelectorAll('.tab-content')).find((el) => {
+                return el.style.display !== 'none' && el.offsetParent !== null;
+            });
+            return visible ? visible.id : null;
+        };
+
+        const activeTab = getActiveTabId();
+
+        // detect whether this client has leader templates available (i.e. current user is leader)
+        const isLeaderClient = Boolean(document.getElementById('modal-template-leader'));
+
+        const ticketUrlPrefix = isLeaderClient ? '/tickets/leader-view-ticket/ticket/' : '/tickets/secretary-view-ticket/ticket/';
+
         items.forEach(it => {
+            // only include results that exist in the currently visible tab (if any)
+            if (activeTab) {
+                // rows in different templates use different attributes: data-ticket-id, data-id, or data-href
+                const selector = `#${activeTab} tr[data-ticket-id="${it.id}"], #${activeTab} tr[data-id="${it.id}"], #${activeTab} tr[data-href$="/${it.id}"]`;
+                const inTab = document.querySelector(selector);
+                if (!inTab) return; // skip result not belonging to active tab
+            }
             const li = document.createElement('li');
             li.className = 'tickets-search-item';
             const a = document.createElement('a');
-            a.href = `/tickets/secretary-view-ticket/ticket/${it.id}`;
+            a.href = `${ticketUrlPrefix}${it.id}`;
             a.textContent = `${it.am} — ${it.studentName} — ${it.subject}`;
+
+            // If we're on the viewtickets page and the unassigned tab contains
+            // this ticket (meaning it's not yet assigned), we open the modal
+            // instead of navigating
+            try {
+                const modalRootExists = document.getElementById('modalRoot');
+                // prefer opening modal when the ticket row exists in the active tab
+                const selector = `#${activeTab} tr[data-ticket-id="${it.id}"], #${activeTab} tr[data-id="${it.id}"], #${activeTab} tr[data-href$="/${it.id}"]`;
+                const activeRow = activeTab ? document.querySelector(selector) : null;
+                // Only open modal when the row explicitly supports it (has data-modal-type)
+                const rowSupportsModal = activeRow && activeRow.hasAttribute && activeRow.hasAttribute('data-modal-type');
+                if (rowSupportsModal && modalRootExists && typeof window.openTicketModal === 'function') {
+                    a.addEventListener('click', (ev) => {
+                        ev.preventDefault();
+                        // modal type is taken from the row's data-modal-type attribute when present
+                        const modalType = activeRow.getAttribute('data-modal-type') || (document.getElementById('modal-template-leader') ? 'leader' : 'secretary');
+                        window.openTicketModal(String(it.id), modalType).catch((err) => {
+                            console.error('Failed to open modal from search:', err);
+                            window.location.href = `${ticketUrlPrefix}${it.id}`;
+                        });
+                    });
+                }
+            } catch (e) {
+                // ignore and keep anchor as normal link
+            }
+
             li.appendChild(a);
             ul.appendChild(li);
         });
